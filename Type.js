@@ -206,10 +206,14 @@
   Scheme.apply = function(s, scheme){
     // Hope this is ok. s should actually be immutable and we should be working
     // on a different copy of the variable
-    this.varNames.forEach(function(varName){
+
+    if(! (scheme instanceof Scheme) )
+      throw "Can only apply on Schemes !";  
+
+    scheme.varNames.forEach(function(varName){
       delete s[varName];
     });
-    return new Scheme(scheme.varNames, Type.apply(s, scheme.type));
+    return new Scheme(scheme.varNames, Type.apply(s, scheme.tp));
   }
   Scheme.instantiate = function(scheme){
     var nvars = [];
@@ -272,21 +276,21 @@
 
   Exp.prototype.isApp = function(){return this.exp instanceof EApp;};
   Exp.prototype.getAppExpFirst = function(){
-    if(!this.isLit()) throw "Not a application expression !";
+    if(!this.isApp()) throw "Not an application expression !";
     return this.exp.exp1;
   }
   Exp.prototype.getAppExpSecond = function(){
-    if(!this.isLit()) throw "Not a application expression !";
+    if(!this.isApp()) throw "Not an application expression !";
     return this.exp.exp2;
   }
 
   Exp.prototype.isAbs = function(){return this.exp instanceof EAbs;};
   Exp.prototype.getAbsVarName = function(){
-    if(!this.isAbs()) throw "Not a abstraction expression !";
+    if(!this.isAbs()) throw "Not an abstraction expression !";
     return this.exp.varName;
   }
   Exp.prototype.getAbsExp = function(){
-    if(!this.isAbs()) throw "Not a abstraction expression !";
+    if(!this.isAbs()) throw "Not an abstraction expression !";
     return this.exp.exp;
   }
 
@@ -329,49 +333,67 @@
   }
 
   TypeEnv.apply = function(s, te){
+    if(! (te instanceof TypeEnv) ){
+      console.log(te);
+      throw "Not a TypeEnvironment";
+    }
     var env = te.env;
     var envn = copyDic(env);
     for (var key in env) {
       if (env.hasOwnProperty(key)) {
+        if(! (env[key] instanceof Scheme) )
+          throw "Element must be a Scheme";
+        
         envn[key] = Scheme.apply(s, env[key]);
       }
     }
-    return envn;
+    return new TypeEnv(envn);
   };
   TypeEnv.ftv = function(te){
     var env = te.env;
-    var vals = {}; // vals : [
+    var vals = []; // vals : [Scheme]
     for (var key in env) {
       if (env.hasOwnProperty(key)) {
         vals.push(env[key]);
       }
     } 
+    return ftvList(vals);
   };
   TypeEnv.remove = function(te, x){
+    
+    try{te.copy()}catch(e){
+      console.log(te);
+      console.log(e.stack)};
+
     var ten = te.copy();
     delete ten.env[x];
     return ten;
   };
 
-  TypeEnv.prototype.insert = function(x,t){
-    this.env[x] = t;
+  TypeEnv.prototype.insert = function(x,s){
+    if (! (s instanceof Scheme) )
+      throw "Can only insert Schemes !";
+    this.env[x] = s;
   };
 
+  // generalize : TypeEnv -> Type -> Scheme
   TypeEnv.generalize = function(te,t){
     var a = Type.ftv(t);
     var b = TypeEnv.ftv(te);
     b.forEach(function(it){
       a.remove(it);
     });
-    var vs = [];
+    var vars = [];
     a.forEach(function(it){
-      vs.push(it);
+      vars.push(it);
     });
-    return a;
+
+    return new Scheme(vars,t);
   };
 
   ftvList = function(ls){
     var s = new Set([]);
+    if(ls.length == 0) return s;
     var ftv = eval(ls[0].constructor.name + "." + "ftv");
     ls.map(ftv).forEach(function(l){
       s.add(l);
@@ -392,12 +414,18 @@
 
 
   Exp.ti = function(te, exp){
+    if(! (te instanceof TypeEnv)){
+      console.log(arguments.callee.caller);
+      throw "Must supply a TypeEnv";
+    }
     var env = te.env;
     if(exp.isVar()){
       var n = exp.getVarName();
       if(env[n]){
         var sigma = env[n]; // sigma : Scheme
         var t = Scheme.instantiate(sigma);
+        if( ! (t instanceof Type))
+          throw "Must be type damnit";
         return [{}, t];
       }
       else{
@@ -413,33 +441,43 @@
       var tv = Type.generateTypeVar('a');
       var ten = TypeEnv.remove(te, n);
       ten.insert(n,new Scheme([],tv));
+      if( ! (ten instanceof TypeEnv)) throw "MUST SUPPLY A TYPEENV !";
       var k = Exp.ti(ten,e);
       var s1 = k[0]; var t1 = k[1];
       //console.log(Type.apply(s1,tv));
       //console.log(t1);
       //console.log(new Type(Type.apply(s1,tv), t1) );
       var res = new Type(Type.apply(s1,tv), t1);
+      if( ! (res instanceof Type))
+        throw "Must be type damnit";
       return [s1, res];
     }
     else if(exp.isApp()){
       var e1 = exp.getAppExpFirst();
       var e2 = exp.getAppExpSecond();
       var tv = Type.generateTypeVar();
-      var k1 = Exp.ti(env, e1); var s1 = k1[0]; var t1= k1[1];
-      var k2 = Exp.ti(TypeEnv.apply(s1,env), e2); var s2 = k2[0]; var t2 = k2[1];
-      var k3 = Type.mgu(Type.apply(s2,t1), new Type(t2,tv));
+
+      if( ! (te instanceof TypeEnv)) throw "MUST SUPPLY A TYPEENV !";
+      var k1 = Exp.ti(te, e1); var s1 = k1[0]; var t1= k1[1];
+      if( ! ( (TypeEnv.apply(s1,te)) instanceof TypeEnv)) throw "MUST SUPPLY A TYPEENV !";
+      var k2 = Exp.ti(TypeEnv.apply(s1,te), e2); var s2 = k2[0]; var t2 = k2[1];
+      var s3 = Type.mgu(Type.apply(s2,t1), new Type(t2,tv));
+      if( ! ((Type.apply(s3,tv)) instanceof Type))
+        throw "Must be type damnit";
       return [Type.composeSubst(s3,Type.composeSubst(s2,s1)), Type.apply(s3,tv)];
     }
     else if (exp.isLet()){
       var x = exp.getLetVarName();
       var e1 = exp.getLetExpFirst();
       var e2 = exp.getLetExpSecond();
-      var k1 = ti(env, e1); var s1 = k1[0]; var t1 = k1[1];
+      var k1 = Exp.ti(te, e1); var s1 = k1[0]; var t1 = k1[1];
       var ten = TypeEnv.remove(te,x);
-      var tn = generalize(TypeEnv.apply(s1,ten),t1);
-      envn.insert(x,tn); 
-      var k2 = Exp.ti(TypeEnv.apply(s1,ten), e2);
-      return [Type.composeSubsts(s1,s2),t2];
+      var tn = TypeEnv.generalize(TypeEnv.apply(s1,ten),t1);
+      ten.insert(x,tn); 
+      var k2 = Exp.ti(TypeEnv.apply(s1,ten), e2); var s2 = k2[0]; var t2 = k2[1];
+      if (! (t2 instanceof Type))
+        throw "Must be type damnit";
+      return [Type.composeSubst(s1,s2),t2];
     }
   }
 
@@ -451,6 +489,8 @@
 
     var k = Exp.ti(new TypeEnv(env), e);
     var s = k[0]; var t = k[1];
+    if(! (t instanceof Type))
+      throw "MUST BE TYPE !";
     return Type.apply(s,t);
   }
 
@@ -470,17 +510,23 @@
   //console.log(x);
 
   // test ti
-  // test str instances
   var e0 = Exp.Abs('x', Exp.Var('x'));
-  //console.log(e0.toString());
   var e1 = Exp.App(e0, Exp.Lit('10'));
-  //console.log(e1.toString());
-  var e2 = Exp.App(e0, Exp.Lit('10'));
-  var e3 = Exp.Let("id", e0, Exp.App(Exp.Var("id"), Exp.Lit('20')));
-  //console.log(e3.toString());
+  var e2 = Exp.Let("id", e0, Exp.App(Exp.Var("id"), Exp.Lit('20')));
+  var e3 = Exp.Let("id", e0, Exp.Var("id"));
 
   var t0 = Exp.typeInference({},e0);
-  console.log(t0.toString());
   console.log(e0.toString());
+  console.log(t0.toString());
 
+  var t1 = Exp.typeInference({},e1);
+  console.log(e1.toString());
+  console.log(t1.toString());
 
+  var t2 = Exp.typeInference({},e2);
+  console.log(e2.toString());
+  console.log(t2.toString());
+
+  var t3 = Exp.typeInference({},e3);
+  console.log(e3.toString());
+  console.log(t3.toString());
