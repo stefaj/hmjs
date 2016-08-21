@@ -27,7 +27,7 @@
   }
 
   Type.prototype.isLiteral = function(){
-    return !this.isTypeVar();
+    return !this.isTypeVar() && !this.isFunction();
   }
 
   Type.prototype.getLiteral = function(){
@@ -105,7 +105,9 @@
   // Apply substitutions
   // apply : Dictionary String Type -> Type -> Type
   Type.apply = function(s, t){
-    try{t.isTypeVar()}catch(e){console.log(e.stack)};
+    try{t.isTypeVar()}catch(e){
+      console.log(t);
+      console.log(e.stack)};
     if (t.isTypeVar()){
       var n = t.getTypeVar();
       if(s[n] == null)
@@ -216,27 +218,53 @@
       var n = Type.generateTypeVar("a");
       s[varName] = n;
     });
-    return Type.apply(s, this.type); // return : Type
+    return Type.apply(s, scheme.tp); // return : Type
   }
 
   
   EVar = function(varName){this.varName = varName};
+  EVar.prototype.toString = function(){ return this.varName; };
   ELit = function(lit){this.lit = lit};
+  ELit.prototype.toString = function(){ return this.lit; };
   EApp = function(exp1, exp2){this.exp1 = exp1; this.exp2 = exp2};
+  EApp.prototype.toString = function(){ return "(" + this.exp1.toString() + ")(" + this.exp2.toString() + ")";};
   EAbs = function(varName, exp){this.varName = varName; this.exp = exp};
+  EAbs.prototype.toString = function(){ return "\\" + this.varName + " -> " + this.exp.toString();};
   ELet = function(varName, exp1, exp2){this.varName = varName; this.exp1 = exp1;
     this.exp2 = exp2};
+  ELet.prototype.toString = function(){ return "let " + this.varName + " = " + this.exp1.toString() + " in " + this.exp2.toString(); };
 
   Exp = function(exp){
     this.exp = exp;
   }
+  Exp.prototype.toString = function(){
+    return this.exp.toString();
+  }
+  // Static constructor helpers
+  Exp.Var = function(varName){
+    return new Exp(new EVar(varName));
+  }
+  Exp.Lit = function(lit){
+    return new Exp(new ELit(lit));
+  }
+  Exp.App = function(exp1, exp2){
+    return new Exp(new EApp(exp1, exp2));
+  }
+  Exp.Abs = function(varName, exp){
+    return new Exp(new EAbs(varName, exp));
+  }
+  Exp.Let = function(varName, exp1, exp2){
+    return new Exp(new ELet(varName, exp1, exp2));
+  }
+
+
   Exp.prototype.isVar = function(){return this.exp instanceof EVar;};
   Exp.prototype.getVarName = function(){
     if(!this.isVar()) throw "Not a var expression !";
     return this.exp.varName;
   }
 
-  Exp.prototype.isLit = function(){return this.exp instanceof ELit;};
+  Exp.prototype.isLiteral = function(){return this.exp instanceof ELit;};
   Exp.prototype.getLiteral = function(){
     if(!this.isLit()) throw "Not a literal expression !";
     return this.exp.lit;
@@ -382,12 +410,16 @@
     else if(exp.isAbs()){
       var n = exp.getAbsVarName();
       var e = exp.getAbsExp();
-      var tv = Type.generateTypeVar();
+      var tv = Type.generateTypeVar('a');
       var ten = TypeEnv.remove(te, n);
       ten.insert(n,new Scheme([],tv));
       var k = Exp.ti(ten,e);
       var s1 = k[0]; var t1 = k[1];
-      return [s1, new Type(Type.apply(s1,tv), t1)];
+      //console.log(Type.apply(s1,tv));
+      //console.log(t1);
+      //console.log(new Type(Type.apply(s1,tv), t1) );
+      var res = new Type(Type.apply(s1,tv), t1);
+      return [s1, res];
     }
     else if(exp.isApp()){
       var e1 = exp.getAppExpFirst();
@@ -411,14 +443,44 @@
     }
   }
 
+  Exp.typeInference = function(env, e){
+    // Reset state
+    tiSupply = 0;
+    tiSubst = {};
+    tiEnv = {};
+
+    var k = Exp.ti(new TypeEnv(env), e);
+    var s = k[0]; var t = k[1];
+    return Type.apply(s,t);
+  }
+
   var t = new Type("Int");
   var u = new Type("_POLY_A");
   var i = new Type("Int");
-  var r = Type.fromList(["Int","Float","_POLY_A"]);
-  var y = Type.fromList(["_POLY_A","_POLY_B","_POLY_A"]);
-  var f = Type.flatten(r);
+  // var f = Type.flatten(r);
 
   // test mgu
+  var r = Type.fromList(["Int","Float","_POLY_A"]);
+  var y = Type.fromList(["_POLY_A","_POLY_B","_POLY_A"]);
   var z = Type.mgu(r,y);
-  console.log(z);
+  var o = Type.fromList(["Int","_POLY_A","_POLY_A"]);
+  var p = Type.fromList(["_POLY_B","_POLY_A","_POLY_A"]);
+  var x = Type.mgu(o,p);
+  //console.log(z);
+  //console.log(x);
+
+  // test ti
+  // test str instances
+  var e0 = Exp.Abs('x', Exp.Var('x'));
+  //console.log(e0.toString());
+  var e1 = Exp.App(e0, Exp.Lit('10'));
+  //console.log(e1.toString());
+  var e2 = Exp.App(e0, Exp.Lit('10'));
+  var e3 = Exp.Let("id", e0, Exp.App(Exp.Var("id"), Exp.Lit('20')));
+  //console.log(e3.toString());
+
+  var t0 = Exp.typeInference({},e0);
+  console.log(t0.toString());
+  console.log(e0.toString());
+
 
