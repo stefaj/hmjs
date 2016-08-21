@@ -26,12 +26,17 @@
       var val = inp.value;
       var exp = document.getElementById('exp');
 
+      
       expr = eval(val);
+      console.log('Checking expr: ' + expr.toString());
+
       exp.innerHTML = expr.toString();
       var type = document.getElementById('type');
 
       var tp_ = Exp.typeInference({},expr);
+      console.log('Found type: ' + tp_.toString());
       type.innerHTML = tp_.toString();
+      console.log('');
 
     //  exp.innerHTML = 
     };

@@ -5,6 +5,11 @@
   //      | Function this next
 
   // Returns a new set with distinct elements from s1 and s2
+  /**
+   * @param {Set} s1
+   * @param {Set} s2
+   * @return {Set}
+   */
   Set.union = function(s1, s2){
     s = new Set([]);
     s1.forEach(function(i){
@@ -17,6 +22,11 @@
   }
 
   // if next then name is type and next is a type
+  /**
+   * @constructor
+   * @param {(Type|string|null)} base
+   * @param {Type=} next
+   */
   Type = function(base, next){
     this.base = base;
     this.next = next;
@@ -73,6 +83,10 @@
     return str;
   }
 
+  /**
+   * @param {Type} tp
+   * @return {Array<Type>}
+   */
   Type.flatten = function(tp){
     var tps = [];
     while(tp.next){
@@ -82,7 +96,11 @@
     tps.push(new Type(tp.base));
     return tps;
   }
-
+  
+  /**
+   * @param {Array<string>} ls
+   * @return {Type}
+   */
   Type.fromList = function(ls){
     if(ls.length == 1)
       return new Type(ls[0]);
@@ -92,6 +110,10 @@
 
   // Get free type variables
   // ftv :: Type -> Set String
+  /**
+   * @param {Type} tp
+   * @return {Set}
+   */
   Type.ftv = function(tp){
     if (tp.isTypeVar())
       return new Set([tp.getTypeVar()]);
@@ -102,8 +124,13 @@
   }
 
 
-  // Apply substitutions
   // apply : Dictionary String Type -> Type -> Type
+  /**
+   * Apply substitutions
+   * @param {Object} s
+   * @param {Type} t a type
+   * @return {Type}
+   */
   Type.apply = function(s, t){
     try{t.isTypeVar()}catch(e){
       console.log(t);
@@ -122,6 +149,11 @@
       return t;
   }
 
+  /**
+   * @param {Object<string, Type>} s1
+   * @param {Object<string, Type>} s2
+   * @return {Object<string, Type>}
+   */
   Type.composeSubst = function(s1,s2){
     var s2n = {};
     for (var key in s2) {
@@ -140,8 +172,12 @@
     return s2n;
   }
 
-  // Most general unifier
-  // mgu : Type -> Type -> Dictionary String Type
+  /**
+   * Most general unifier
+   * @param {Type} t1 first type
+   * @param {Type} t2 second type
+   * @return {Object<string, Type>}
+   */
   Type.mgu = function(t1, t2){
     if (t1.isFunction() && t2.isFunction()){
       var s1 = Type.mgu(t1.getFirst(), t2.getFirst());
@@ -168,7 +204,11 @@
     }
   }
 
-  // u - String, t - Type
+  /**
+   * @param {string} u name of variable
+   * @param {Type} t type of variable
+   * @return {Object<string, Type>}
+   */
   Type.varBind = function(u,t){
     if (t.isTypeVar() && t.getTypeVar() == u)
       return {};
@@ -183,39 +223,88 @@
 
     // Global state
   var tiSupply = 0;
-  var tiSubst = {};
-  var tiEnv = {};
 
+  /**
+   * @param {string} prefix
+   * @return {Type}
+   */
   Type.generateTypeVar = function(prefix){
     var tv = new Type("_POLY_" + prefix + tiSupply);
     tiSupply++;
     return tv;
   }
 
+  /**
+   * @constructor
+   */
   Scheme = function(varNames, tp){
     this.varNames = varNames;
     this.tp = tp;
-  }
+  };
+
+  /**
+   * We only use it for schemes anyway
+   * @param {Array<Scheme>} ls
+   * @return {Set}
+   */
+  Scheme.ftvList = function(ls){
+    var s = new Set([]);
+    if(ls.length == 0) return s;
+    ls.map(Scheme.ftv).forEach(function(l){
+      s.add(l);
+    });
+    return s;
+  };
+
+  /**
+   * @return {Scheme}
+   */
+  Scheme.prototype.copy = function(){
+    var tp = this.tp;
+    var varNames = [];
+    this.varNames.forEach(function(v){
+      varNames.push(v);
+    });
+    return new Scheme(varNames, tp);
+  };
+
+  /**
+   * @param {Scheme} scheme
+   * @return {Set}
+   */
   Scheme.ftv = function(scheme){
     var s = Type.ftv(scheme.tp);
-    this.varNames.forEach(function(varName){
+    scheme.varNames.forEach(function(varName){
       s.delete(varName);
     });
     return s;
-  }
+  };
+
+  /**
+   * @param {Object} s
+   * @param {Scheme} scheme
+   * @return {Scheme}
+   */
   Scheme.apply = function(s, scheme){
     // Hope this is ok. s should actually be immutable and we should be working
     // on a different copy of the variable
-
     if(! (scheme instanceof Scheme) )
       throw "Can only apply on Schemes !";  
-
+    var sn = copyDic(s);
     scheme.varNames.forEach(function(varName){
-      delete s[varName];
+      delete sn[varName];
     });
-    return new Scheme(scheme.varNames, Type.apply(s, scheme.tp));
+
+    return new Scheme(scheme.varNames, Type.apply(sn, scheme.tp));
   }
+  
+  /**
+   * @param {Scheme} scheme
+   * @return {Type}
+   */
   Scheme.instantiate = function(scheme){
+    if (! (scheme instanceof Scheme))
+      throw "Can only instantiate schemes !";
     var nvars = [];
     var s = {}; // s : Map String Type
     scheme.varNames.forEach(function(varName){
@@ -226,18 +315,49 @@
   }
 
   
-  EVar = function(varName){this.varName = varName};
-  EVar.prototype.toString = function(){ return this.varName; };
-  ELit = function(lit){this.lit = lit};
+  /**
+   * @constructor
+   */
+  EVar = function(varName){
+    this.varName = varName
+  };
+  EVar.prototype.toString = function(){
+    return this.varName; 
+  };
+  /**
+   * @constructor
+   */
+  ELit = function(lit){
+    this.lit = lit
+  };
   ELit.prototype.toString = function(){ return this.lit; };
-  EApp = function(exp1, exp2){this.exp1 = exp1; this.exp2 = exp2};
+  /**
+   * @constructor
+   */
+  EApp = function(exp1, exp2){
+    this.exp1 = exp1; this.exp2 = exp2
+  };
   EApp.prototype.toString = function(){ return "(" + this.exp1.toString() + ")(" + this.exp2.toString() + ")";};
-  EAbs = function(varName, exp){this.varName = varName; this.exp = exp};
+  /**
+   * @constructor
+   */
+  EAbs = function(varName, exp){
+    this.varName = varName; this.exp = exp
+  };
   EAbs.prototype.toString = function(){ return "\\" + this.varName + " -> " + this.exp.toString();};
-  ELet = function(varName, exp1, exp2){this.varName = varName; this.exp1 = exp1;
-    this.exp2 = exp2};
+  /**
+   * @constructor
+   */
+  ELet = function(varName, exp1, exp2){
+    this.varName = varName; 
+    this.exp1 = exp1;
+    this.exp2 = exp2
+  };
   ELet.prototype.toString = function(){ return "let " + this.varName + " = " + this.exp1.toString() + " in " + this.exp2.toString(); };
 
+  /**
+   * @constructor
+   */
   Exp = function(exp){
     this.exp = exp;
   }
@@ -245,22 +365,36 @@
     return this.exp.toString();
   }
   // Static constructor helpers
+  /**
+   * @return {Exp}
+   */
   Exp.Var = function(varName){
     return new Exp(new EVar(varName));
   }
+  /**
+   * @return {Exp}
+   */
   Exp.Lit = function(lit){
     return new Exp(new ELit(lit));
   }
+  /**
+   * @return {Exp}
+   */
   Exp.App = function(exp1, exp2){
     return new Exp(new EApp(exp1, exp2));
   }
+  /**
+   * @return {Exp}
+   */
   Exp.Abs = function(varName, exp){
     return new Exp(new EAbs(varName, exp));
   }
+  /**
+   * @return {Exp}
+   */
   Exp.Let = function(varName, exp1, exp2){
     return new Exp(new ELet(varName, exp1, exp2));
   }
-
 
   Exp.prototype.isVar = function(){return this.exp instanceof EVar;};
   Exp.prototype.getVarName = function(){
@@ -270,7 +404,7 @@
 
   Exp.prototype.isLiteral = function(){return this.exp instanceof ELit;};
   Exp.prototype.getLiteral = function(){
-    if(!this.isLit()) throw "Not a literal expression !";
+    if(!this.isLiteral()) throw "Not a literal expression !";
     return this.exp.lit;
   }
 
@@ -324,14 +458,41 @@
   // exp : Exp
   
   // TypeEnv Map String Scheme
+  /**
+   * @constructor
+   * @param {Object<string, Scheme>} env
+   */
   TypeEnv = function(env){
-    this.env = env;
+    this.env = {};
+    for (var key in env) {
+      if (env.hasOwnProperty(key)) {
+        /**
+         * @type {Scheme}
+         */
+        var envk = env[key];
+        if( ! (envk instanceof Scheme)){
+          console.log(envk);
+          throw "Must be a Scheme ! ";
+        }
+        this.env[key] = envk.copy();
+      }
+    }
   }
   
+  // returns TypeEnv
+  /**
+   * @return {TypeEnv}
+   */
   TypeEnv.prototype.copy = function(){
     return new TypeEnv(copyDic(this.env));
   }
 
+  // Dic String Type -> TypeEnv -> TypeEnv
+  /**
+   * @param {Object} s
+   * @param {TypeEnv} te
+   * @return {TypeEnv}
+   */
   TypeEnv.apply = function(s, te){
     if(! (te instanceof TypeEnv) ){
       console.log(te);
@@ -345,11 +506,21 @@
           throw "Element must be a Scheme";
         
         envn[key] = Scheme.apply(s, env[key]);
+        if (! (envn[key] instanceof Scheme))
+          throw "For some reason Scheme.apply does not return a Scheme";
       }
     }
     return new TypeEnv(envn);
   };
+  
+  /**
+   * @param {TypeEnv} te
+   * @return {Set}
+   */
   TypeEnv.ftv = function(te){
+    if( ! (te instanceof TypeEnv))
+      throw "Must be applied to a TypeEnv";
+
     var env = te.env;
     var vals = []; // vals : [Scheme]
     for (var key in env) {
@@ -357,9 +528,17 @@
         vals.push(env[key]);
       }
     } 
-    return ftvList(vals);
+    return Scheme.ftvList(vals);
   };
+
+  /**
+   * @param {TypeEnv} te
+   * @param {string} x
+   * @return {TypeEnv}
+   */
   TypeEnv.remove = function(te, x){
+    if ( ! (te instanceof TypeEnv))
+      throw "Can only remove from TypeEnv";
     
     try{te.copy()}catch(e){
       console.log(te);
@@ -370,127 +549,136 @@
     return ten;
   };
 
-  TypeEnv.prototype.insert = function(x,s){
+  /**
+   * @param {string} x
+   * @param {Scheme} s
+   * @param {TypeEnv} te
+   * @return {TypeEnv}
+   */
+  TypeEnv.insert = function(x,s,te){
     if (! (s instanceof Scheme) )
       throw "Can only insert Schemes !";
-    this.env[x] = s;
+    var ten = te.copy();
+    ten.env[x] = s;
+    return ten;
   };
 
   // generalize : TypeEnv -> Type -> Scheme
+  /**
+   * @param {TypeEnv} te
+   * @param {Type} t
+   * @return {Scheme}
+   */
   TypeEnv.generalize = function(te,t){
+    if( ! (te instanceof TypeEnv))
+      throw "Must be applied to TypeEnv";
+    if ( ! (t instanceof Type))
+      throw "Must be applied to Type";
     var a = Type.ftv(t);
     var b = TypeEnv.ftv(te);
     b.forEach(function(it){
-      a.remove(it);
+      a.delete(it);
     });
     var vars = [];
     a.forEach(function(it){
       vars.push(it);
     });
-
     return new Scheme(vars,t);
   };
 
-  ftvList = function(ls){
-    var s = new Set([]);
-    if(ls.length == 0) return s;
-    var ftv = eval(ls[0].constructor.name + "." + "ftv");
-    ls.map(ftv).forEach(function(l){
-      s.add(l);
-    });
-    return s;
-  };
-  applyList = function(s,ls){
-    var s = new Set([]);
+    /*applyList = function(s,ls){
     var lsn = [];
     var apply = eval(ls[0].constructor.name + "." + "apply");
     ls.forEach(function(l){
-      lsn.apply(s,l);
+      lsn.push(apply(s,l));
     });
     return lsn;
-  };
+  };*/
 
 
 
-
+  /**
+   * @param {TypeEnv} te
+   * @param {Exp} exp
+   * @return {{sub : Object<string, Type>, tp : Type}}
+   */
   Exp.ti = function(te, exp){
     if(! (te instanceof TypeEnv)){
-      console.log(arguments.callee.caller);
       throw "Must supply a TypeEnv";
     }
     var env = te.env;
+
     if(exp.isVar()){
       var n = exp.getVarName();
       if(env[n]){
+        /**
+         * @type {Scheme}
+         */
         var sigma = env[n]; // sigma : Scheme
+        if ( ! (sigma instanceof Scheme))
+          throw "sigma must be a Scheme !"
         var t = Scheme.instantiate(sigma);
-        if( ! (t instanceof Type))
-          throw "Must be type damnit";
-        return [{}, t];
+        return {sub:{}, tp:t};
       }
       else{
-        throw "Unbound variable" + n;
+        throw "Unbound variable " + n;
       }
     }
     else if(exp.isLiteral()){
-      return [{}, new Type("Integer")]; // Expand here
+      return {sub:{}, tp : new Type("Integer")}; // Expand here
     }
     else if(exp.isAbs()){
       var n = exp.getAbsVarName();
       var e = exp.getAbsExp();
       var tv = Type.generateTypeVar('a');
       var ten = TypeEnv.remove(te, n);
-      ten.insert(n,new Scheme([],tv));
-      if( ! (ten instanceof TypeEnv)) throw "MUST SUPPLY A TYPEENV !";
-      var k = Exp.ti(ten,e);
-      var s1 = k[0]; var t1 = k[1];
+      var tenn = TypeEnv.insert(n,new Scheme([],tv),ten);
+      var k = Exp.ti(tenn,e);
+      var s1 = k['sub']; var t1 = k['tp'];
       //console.log(Type.apply(s1,tv));
       //console.log(t1);
       //console.log(new Type(Type.apply(s1,tv), t1) );
       var res = new Type(Type.apply(s1,tv), t1);
       if( ! (res instanceof Type))
         throw "Must be type damnit";
-      return [s1, res];
+      return {sub : s1, tp : res};
     }
     else if(exp.isApp()){
       var e1 = exp.getAppExpFirst();
       var e2 = exp.getAppExpSecond();
-      var tv = Type.generateTypeVar();
+      var tv = Type.generateTypeVar('a');
 
-      if( ! (te instanceof TypeEnv)) throw "MUST SUPPLY A TYPEENV !";
-      var k1 = Exp.ti(te, e1); var s1 = k1[0]; var t1= k1[1];
-      if( ! ( (TypeEnv.apply(s1,te)) instanceof TypeEnv)) throw "MUST SUPPLY A TYPEENV !";
-      var k2 = Exp.ti(TypeEnv.apply(s1,te), e2); var s2 = k2[0]; var t2 = k2[1];
+      var k1 = Exp.ti(te, e1); var s1 = k1['sub']; var t1= k1['tp'];
+      var k2 = Exp.ti(TypeEnv.apply(s1,te), e2); var s2 = k2['sub']; var t2 = k2['tp'];
       var s3 = Type.mgu(Type.apply(s2,t1), new Type(t2,tv));
-      if( ! ((Type.apply(s3,tv)) instanceof Type))
-        throw "Must be type damnit";
-      return [Type.composeSubst(s3,Type.composeSubst(s2,s1)), Type.apply(s3,tv)];
+
+      return {sub : Type.composeSubst(s3,Type.composeSubst(s2,s1)), tp : Type.apply(s3,tv)};
     }
     else if (exp.isLet()){
       var x = exp.getLetVarName();
       var e1 = exp.getLetExpFirst();
       var e2 = exp.getLetExpSecond();
-      var k1 = Exp.ti(te, e1); var s1 = k1[0]; var t1 = k1[1];
+      var k1 = Exp.ti(te, e1); var s1 = k1['sub']; var t1 = k1['tp'];
       var ten = TypeEnv.remove(te,x);
       var tn = TypeEnv.generalize(TypeEnv.apply(s1,ten),t1);
-      ten.insert(x,tn); 
-      var k2 = Exp.ti(TypeEnv.apply(s1,ten), e2); var s2 = k2[0]; var t2 = k2[1];
-      if (! (t2 instanceof Type))
-        throw "Must be type damnit";
-      return [Type.composeSubst(s1,s2),t2];
+      var tenn = TypeEnv.insert(x,tn,ten); 
+      var k2 = Exp.ti(TypeEnv.apply(s1,tenn), e2); var s2 = k2['sub']; var t2 = k2['tp'];
+      return { sub : Type.composeSubst(s1,s2), tp : t2 };
     }
+    throw "Partial pattern match";
   }
 
+  /**
+   * @param {Object<string,Scheme>} env
+   * @param {Exp} e
+   */
   Exp.typeInference = function(env, e){
     // Reset state
     tiSupply = 0;
-    tiSubst = {};
-    tiEnv = {};
 
     var k = Exp.ti(new TypeEnv(env), e);
-    var s = k[0]; var t = k[1];
-    if(! (t instanceof Type))
-      throw "MUST BE TYPE !";
+
+    var s = k['sub']; var t = k['tp'];
     return Type.apply(s,t);
   }
 
@@ -530,3 +718,18 @@
   var t3 = Exp.typeInference({},e3);
   console.log(e3.toString());
   console.log(t3.toString());
+
+
+  var e4 = Exp.App( Exp.Var('+'), Exp.Lit('10'));
+  var pt = Type.fromList(["Integer","Integer","Integer"]);
+  var s = new Scheme(['+'],pt) 
+  var t4 = Exp.typeInference({'+' :s },e4);
+  //console.log(s);
+  //console.log(e4.toString());
+  //console.log(t4.toString());
+
+  var e5 = Exp.App(e4, Exp.Lit('20'));
+  var t5 = Exp.typeInference({'+':s},e5);
+  console.log(e5.toString());
+  //console.log(t5.toString());
+
