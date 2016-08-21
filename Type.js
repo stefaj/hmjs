@@ -340,12 +340,34 @@
   Exp.App = function(exp1, exp2){
     return new Exp(new EApp(exp1, exp2));
   }
+
+  /**
+   * @return {Exp}
+   */
+  Exp.AppFunc = function(exps, exp){
+    var e = exp;
+    exps.forEach(function(i){
+      e = Exp.App(e,i);
+    });
+    return e;
+  }
+
   /**
    * @return {Exp}
    */
   Exp.Abs = function(varName, exp){
     return new Exp(new EAbs(varName, exp));
   }
+
+  /**
+  * @return {Exp}
+  */
+  Exp.Func = function(varNames, exp){
+    if(varNames.length == 1)
+      return Exp.Abs(varNames[0],exp);
+    return Exp.Abs(varNames[0], Exp.Func(varNames.splice(1),exp));
+  }
+
   /**
    * @return {Exp}
    */
@@ -637,3 +659,16 @@
   console.log(e5.toString());
   console.log(t5.toString());
 
+  var e6 = Exp.AppFunc([Exp.Lit('1'),Exp.Lit('2')], Exp.Var('tri'))
+  console.log(e6.toString());
+  var s = new Scheme(['tri'], Type.fromList(['Integer','Integer','Integer','Integer']));
+  var t6 = Exp.typeInference({'tri' : s}, e6);
+  console.log(t6.toString());
+
+
+//  var e6 = Exp.AppFunc([Exp.Lit('1'),Exp.Lit('2')], Exp.Var('tri'))
+  var e6 = Exp.App(Exp.Var('tri'), Exp.Lit('10'));
+  console.log(e6.toString());
+  var s = new Scheme(['tri'], Type.fromList(['Bool','Integer','Integer','Integer']));
+  var t6 = Exp.typeInference({'tri' : s}, e6);
+  console.log(t6.toString());
