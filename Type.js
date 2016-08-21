@@ -4,23 +4,6 @@
   //      | Literal
   //      | Function this next
 
-  // Returns a new set with distinct elements from s1 and s2
-  /**
-   * @param {Set} s1
-   * @param {Set} s2
-   * @return {Set}
-   */
-  Set.union = function(s1, s2){
-    s = new Set([]);
-    s1.forEach(function(i){
-      s.add(i);
-    });
-    s2.forEach(function(i){
-      s.add(i);
-    });
-    return s;
-  }
-
   // if next then name is type and next is a type
   /**
    * @constructor
@@ -116,11 +99,14 @@
    */
   Type.ftv = function(tp){
     if (tp.isTypeVar())
-      return new Set([tp.getTypeVar()]);
+      return new Immutable.Set([tp.getTypeVar()]);
     else if (tp.isLiteral())
-      return new Set([]);
-    else 
-      return Set.union(Type.ftv(tp.getFirst()), Type.ftv(tp.getSecond()));
+      return new Immutable.Set();
+    else{
+      var left = Type.ftv(tp.getFirst());
+      var right = Type.ftv(tp.getFirst());
+      return left.union(right);
+    }
   }
 
 
@@ -132,15 +118,12 @@
    * @return {Type}
    */
   Type.apply = function(s, t){
-    try{t.isTypeVar()}catch(e){
-      console.log(t);
-      console.log(e.stack)};
     if (t.isTypeVar()){
       var n = t.getTypeVar();
-      if(s[n] == null)
-        return t;
+      if(s.has(n))
+        return s.get(n);
       else
-        return s[n];
+        return t;
     }
     else if (t.isFunction()){
       return new Type(Type.apply(s,t.getFirst()), Type.apply(s, t.getSecond()));
@@ -155,21 +138,11 @@
    * @return {Object<string, Type>}
    */
   Type.composeSubst = function(s1,s2){
-    var s2n = {};
-    for (var key in s2) {
-      if (s2.hasOwnProperty(key)) {
-        var n = Type.apply(s1, s2[key]);
-        s2n[key] = n;
-      }
-    }
-    // Union is left-biased
-    for(var key in s1){
-      if (s1.hasOwnProperty(key)) {
-        if(!s2n[key])
-          s2n[key] = s1[key];
-      }
-    }
-    return s2n;
+
+    //var left = s2.map(v => Type.apply(s1,v));
+    //var res = left.merge(s1);
+    return (s2.map(v => Type.apply(s1,v))).merge(s1);
+    //return res;
   }
 
   /**
@@ -197,7 +170,7 @@
     }
     else if(t1.isLiteral() && t2.isLiteral() && t1.getLiteral() ===
         t2.getLiteral()){
-      return {};
+      return nullSubst;
     }
     else{
       throw "types do not unify: " + t1.toString() + " and " + t2.toString();
@@ -211,13 +184,11 @@
    */
   Type.varBind = function(u,t){
     if (t.isTypeVar() && t.getTypeVar() == u)
-      return {};
+      return nullSubst;
     else if ( Type.ftv(t).has(u) )
       throw "occur check fails " + u + " vs " + t.toString();
     else{
-      var singleton = {};
-      singleton[u] = t;
-      return singleton;
+      return Immutable.Map([[u,t]]);
     }
   };
 
@@ -248,24 +219,12 @@
    * @return {Set}
    */
   Scheme.ftvList = function(ls){
-    var s = new Set([]);
+    var s = new Immutable.Set([]);
     if(ls.length == 0) return s;
     ls.map(Scheme.ftv).forEach(function(l){
-      s.add(l);
+      s=s.add(l);
     });
     return s;
-  };
-
-  /**
-   * @return {Scheme}
-   */
-  Scheme.prototype.copy = function(){
-    var tp = this.tp;
-    var varNames = [];
-    this.varNames.forEach(function(v){
-      varNames.push(v);
-    });
-    return new Scheme(varNames, tp);
   };
 
   /**
@@ -275,7 +234,7 @@
   Scheme.ftv = function(scheme){
     var s = Type.ftv(scheme.tp);
     scheme.varNames.forEach(function(varName){
-      s.delete(varName);
+      s=s.delete(varName);
     });
     return s;
   };
@@ -286,13 +245,11 @@
    * @return {Scheme}
    */
   Scheme.apply = function(s, scheme){
-    // Hope this is ok. s should actually be immutable and we should be working
-    // on a different copy of the variable
     if(! (scheme instanceof Scheme) )
       throw "Can only apply on Schemes !";  
-    var sn = copyDic(s);
+    var sn = s;
     scheme.varNames.forEach(function(varName){
-      delete sn[varName];
+      sn = sn.delete(varName);
     });
 
     return new Scheme(scheme.varNames, Type.apply(sn, scheme.tp));
@@ -306,10 +263,10 @@
     if (! (scheme instanceof Scheme))
       throw "Can only instantiate schemes !";
     var nvars = [];
-    var s = {}; // s : Map String Type
+    var s = Immutable.Map({}); // s : Map String Type
     scheme.varNames.forEach(function(varName){
       var n = Type.generateTypeVar("a");
-      s[varName] = n;
+      s = s.set(varName, n);
     });
     return Type.apply(s, scheme.tp); // return : Type
   }
@@ -441,18 +398,6 @@
     if(!this.isLet()) throw "Not a Let expression !";
     return this.exp.exp2;
   }
-
-  // Shallow copy
-  copyDic = function(dic){
-    var dicn = {};
-    for (var key in dic) {
-      if (dic.hasOwnProperty(key)) {
-        dicn[key] = dic[key];
-      }
-    }
-    return dicn;
-  }
-
   // Algorithm W
   // env : Map String Scheme
   // exp : Exp
@@ -463,30 +408,9 @@
    * @param {Object<string, Scheme>} env
    */
   TypeEnv = function(env){
-    this.env = {};
-    for (var key in env) {
-      if (env.hasOwnProperty(key)) {
-        /**
-         * @type {Scheme}
-         */
-        var envk = env[key];
-        if( ! (envk instanceof Scheme)){
-          console.log(envk);
-          throw "Must be a Scheme ! ";
-        }
-        this.env[key] = envk.copy();
-      }
-    }
+    this.env = Immutable.Map(env);
   }
   
-  // returns TypeEnv
-  /**
-   * @return {TypeEnv}
-   */
-  TypeEnv.prototype.copy = function(){
-    return new TypeEnv(copyDic(this.env));
-  }
-
   // Dic String Type -> TypeEnv -> TypeEnv
   /**
    * @param {Object} s
@@ -498,19 +422,8 @@
       console.log(te);
       throw "Not a TypeEnvironment";
     }
-    var env = te.env;
-    var envn = copyDic(env);
-    for (var key in env) {
-      if (env.hasOwnProperty(key)) {
-        if(! (env[key] instanceof Scheme) )
-          throw "Element must be a Scheme";
-        
-        envn[key] = Scheme.apply(s, env[key]);
-        if (! (envn[key] instanceof Scheme))
-          throw "For some reason Scheme.apply does not return a Scheme";
-      }
-    }
-    return new TypeEnv(envn);
+
+    return new TypeEnv(te.env.map(v => Scheme.apply(s,v)));
   };
   
   /**
@@ -521,14 +434,7 @@
     if( ! (te instanceof TypeEnv))
       throw "Must be applied to a TypeEnv";
 
-    var env = te.env;
-    var vals = []; // vals : [Scheme]
-    for (var key in env) {
-      if (env.hasOwnProperty(key)) {
-        vals.push(env[key]);
-      }
-    } 
-    return Scheme.ftvList(vals);
+    return Scheme.ftvList(Array.from(te.env.values()) );
   };
 
   /**
@@ -537,16 +443,7 @@
    * @return {TypeEnv}
    */
   TypeEnv.remove = function(te, x){
-    if ( ! (te instanceof TypeEnv))
-      throw "Can only remove from TypeEnv";
-    
-    try{te.copy()}catch(e){
-      console.log(te);
-      console.log(e.stack)};
-
-    var ten = te.copy();
-    delete ten.env[x];
-    return ten;
+    return new TypeEnv(te.env.delete(x));
   };
 
   /**
@@ -558,9 +455,7 @@
   TypeEnv.insert = function(x,s,te){
     if (! (s instanceof Scheme) )
       throw "Can only insert Schemes !";
-    var ten = te.copy();
-    ten.env[x] = s;
-    return ten;
+    return new TypeEnv(te.env.set(x,s));
   };
 
   // generalize : TypeEnv -> Type -> Scheme
@@ -576,14 +471,12 @@
       throw "Must be applied to Type";
     var a = Type.ftv(t);
     var b = TypeEnv.ftv(te);
-    b.forEach(function(it){
-      a.delete(it);
+
+    b.forEach(function(i){
+      a = a.delete(i);
     });
-    var vars = [];
-    a.forEach(function(it){
-      vars.push(it);
-    });
-    return new Scheme(vars,t);
+
+    return new Scheme(a.toList(),t);
   };
 
     /*applyList = function(s,ls){
@@ -595,7 +488,7 @@
     return lsn;
   };*/
 
-
+  var nullSubst = Immutable.Map({});
 
   /**
    * @param {TypeEnv} te
@@ -610,22 +503,21 @@
 
     if(exp.isVar()){
       var n = exp.getVarName();
-      if(env[n]){
+      if(env.has(n)){
         /**
          * @type {Scheme}
          */
-        var sigma = env[n]; // sigma : Scheme
-        if ( ! (sigma instanceof Scheme))
-          throw "sigma must be a Scheme !"
+        var sigma = env.get(n); // sigma : Scheme
         var t = Scheme.instantiate(sigma);
-        return {sub:{}, tp:t};
+
+        return {sub: nullSubst , tp:t};
       }
       else{
         throw "Unbound variable " + n;
       }
     }
     else if(exp.isLiteral()){
-      return {sub:{}, tp : new Type("Integer")}; // Expand here
+      return {sub: nullSubst , tp : new Type("Integer")}; // Expand here
     }
     else if(exp.isAbs()){
       var n = exp.getAbsVarName();
@@ -688,20 +580,32 @@
   // var f = Type.flatten(r);
 
   // test mgu
+  
+  var ll =Type.mgu(t,u);
+  //console.log(Array.from(ll.keys()) );
+
   var r = Type.fromList(["Int","Float","_POLY_A"]);
   var y = Type.fromList(["_POLY_A","_POLY_B","_POLY_A"]);
   var z = Type.mgu(r,y);
   var o = Type.fromList(["Int","_POLY_A","_POLY_A"]);
   var p = Type.fromList(["_POLY_B","_POLY_A","_POLY_A"]);
   var x = Type.mgu(o,p);
-  //console.log(z);
-  //console.log(x);
+  //console.log(z.toObject() );
+  //console.log(x.toObject());
+  //console.log('end test mgu');
 
   // test ti
+
+
   var e0 = Exp.Abs('x', Exp.Var('x'));
   var e1 = Exp.App(e0, Exp.Lit('10'));
   var e2 = Exp.Let("id", e0, Exp.App(Exp.Var("id"), Exp.Lit('20')));
   var e3 = Exp.Let("id", e0, Exp.Var("id"));
+  var e7 = Exp.Lit('20');
+
+  var t7 = Exp.typeInference({},e7);
+  console.log(e7.toString());
+  console.log(t7.toString());
 
   var t0 = Exp.typeInference({},e0);
   console.log(e0.toString());
@@ -725,11 +629,11 @@
   var s = new Scheme(['+'],pt) 
   var t4 = Exp.typeInference({'+' :s },e4);
   //console.log(s);
-  //console.log(e4.toString());
-  //console.log(t4.toString());
+  console.log(e4.toString());
+  console.log(t4.toString());
 
   var e5 = Exp.App(e4, Exp.Lit('20'));
   var t5 = Exp.typeInference({'+':s},e5);
   console.log(e5.toString());
-  //console.log(t5.toString());
+  console.log(t5.toString());
 
