@@ -1,10 +1,41 @@
 <html>
 
   <head>
-    <title>Type unification test</title>
+    <title>Hindley Milner inference test</title>
   </head>
 
   <body>
+    
+    Input: <input type="text" id="inp" name="inp"><br>
+    <button onclick='go()'>Go !</button>
+    <br>
+    Answer:
+    <h3 id="exp">
+      \x -> x
+    </h3>
+    <h3 id="type">
+      a0 -> a0
+    </h3>
+
+  <script>
+    var inp = document.getElementById('inp');
+
+    inp.value= 'Exp.Let("id", e0, Exp.App(Exp.Var("id"), Exp.Lit("20")));';
+
+    go = function(ev){
+      var val = inp.value;
+      var exp = document.getElementById('exp');
+
+      expr = eval(val);
+      exp.innerHTML = expr.toString();
+      var type = document.getElementById('type');
+
+      var tp_ = Exp.typeInference({},expr);
+      type.innerHTML = tp_.toString();
+
+    //  exp.innerHTML = 
+    };
+  </script>
 
   <script src="Type.js">
   </script>
